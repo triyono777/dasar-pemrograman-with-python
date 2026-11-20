@@ -13,7 +13,14 @@ import {
   saveProgressState,
 } from './data/badgesAndPeers';
 import { evaluateUnlockedBadges } from './engine/gamification';
-import type { AppProgressState, AppTab, AssessmentAttempt, UserProfile } from './types';
+import { decodeSharedProfilePayload } from './engine/profileShare';
+import type {
+  AppProgressState,
+  AppTab,
+  AssessmentAttempt,
+  EditableUserProfile,
+  SharedProfilePayload,
+} from './types';
 
 interface RewardToast {
   title: string;
@@ -29,6 +36,25 @@ export default function App() {
     null
   );
   const [toast, setToast] = useState<RewardToast | null>(null);
+  const [sharedProfile, setSharedProfile] = useState<SharedProfilePayload | null>(() => {
+    try {
+      const token = new URLSearchParams(window.location.search).get('profil');
+      return token ? decodeSharedProfilePayload(token) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const dismissSharedProfile = () => {
+    setSharedProfile(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('profil');
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Ignore history restriction
+    }
+  };
 
   useEffect(() => {
     saveProgressState(state);
@@ -226,9 +252,7 @@ export default function App() {
     setActiveTab('rekap');
   };
 
-  const handleUpdateProfile = (
-    updates: Pick<UserProfile, 'name' | 'nim' | 'kelas' | 'avatarId'>
-  ) => {
+  const handleUpdateProfile = (updates: EditableUserProfile) => {
     setState((prev) => ({
       ...prev,
       profile: {
@@ -236,6 +260,10 @@ export default function App() {
         ...updates,
       },
     }));
+    setToast({
+      title: 'Profil Berhasil Disimpan',
+      detail: `Data ${updates.name} kini aktif dan siap dibagikan.`,
+    });
   };
 
   const handleResetProgress = () => {
@@ -257,7 +285,96 @@ export default function App() {
           if (tab === 'rekap') setRekapSubView('rekap');
         }}
         userName={state.profile.name}
+        userPhotoUrl={state.profile.photoDataUrl}
       />
+
+      {/* Shared Profile Viewer Modal when opened via ?profil=... link */}
+      {sharedProfile && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="incoming-shared-profile-title"
+          className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4 no-print"
+        >
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+            <div className="bg-slate-900 px-6 py-4 flex items-center justify-between text-white">
+              <div>
+                <p className="text-[11px] font-semibold text-blue-300">
+                  KARTU PROFIL DIBAGIKAN · PYDASAR STUDIO
+                </p>
+                <h2 id="incoming-shared-profile-title" className="text-lg font-bold mt-0.5">
+                  {sharedProfile.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={dismissSharedProfile}
+                aria-label="Tutup kartu profil dibagikan"
+                className="p-1.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-blue-700">
+                  Level {sharedProfile.level} · {sharedProfile.levelTitle} · Peringkat #{sharedProfile.rank}
+                </p>
+                <p className="text-xs font-mono text-slate-500 tabular-nums">
+                  NIM {sharedProfile.nim} · Kelas {sharedProfile.kelas}
+                </p>
+                <p className="text-xs text-slate-600">
+                  {[sharedProfile.prodi, sharedProfile.institusi, sharedProfile.semester]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </div>
+
+              {sharedProfile.bio && (
+                <p className="text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-2.5 italic">
+                  “{sharedProfile.bio}”
+                </p>
+              )}
+
+              <div className="grid grid-cols-4 gap-2 pt-3 border-t border-slate-100 text-center tabular-nums">
+                <div className="p-2.5 rounded-xl bg-slate-50">
+                  <p className="text-sm font-bold font-mono text-slate-900">{sharedProfile.xp}</p>
+                  <p className="text-[11px] text-slate-500">XP</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50">
+                  <p className="text-sm font-bold font-mono text-slate-900">
+                    {sharedProfile.completedModules}/13
+                  </p>
+                  <p className="text-[11px] text-slate-500">Modul</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50">
+                  <p className="text-sm font-bold font-mono text-slate-900">
+                    {sharedProfile.totalStars}
+                  </p>
+                  <p className="text-[11px] text-slate-500">Bintang</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50">
+                  <p className="text-sm font-bold font-mono text-slate-900">
+                    {sharedProfile.badgesCount}
+                  </p>
+                  <p className="text-[11px] text-slate-500">Lencana</p>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={dismissSharedProfile}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg"
+                >
+                  Tutup &amp; Buka PyDasar Studio
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Non-intrusive XP / Badge Toast */}
       {toast && (

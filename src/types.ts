@@ -205,10 +205,39 @@ export interface UserProfile {
   name: string;
   nim: string;
   kelas: string;
+  prodi: string;
+  institusi: string;
+  semester: string;
+  email: string;
+  bio: string;
   avatarId: 'student' | 'cobalt' | 'emerald' | 'amber';
+  photoDataUrl?: string;
   xp: number;
   streakDays: number;
   lastActiveDate: string;
+}
+
+export type EditableUserProfile = Pick<
+  UserProfile,
+  'name' | 'nim' | 'kelas' | 'prodi' | 'institusi' | 'semester' | 'email' | 'bio' | 'avatarId' | 'photoDataUrl'
+>;
+
+export interface SharedProfilePayload {
+  name: string;
+  nim: string;
+  kelas: string;
+  prodi: string;
+  institusi: string;
+  semester: string;
+  bio: string;
+  xp: number;
+  level: number;
+  levelTitle: string;
+  rank: number;
+  completedModules: number;
+  totalStars: number;
+  badgesCount: number;
+  streakDays: number;
 }
 
 export interface BadgeDefinition {

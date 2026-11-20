@@ -112,6 +112,11 @@ export function createInitialProgressState(): AppProgressState {
       name: 'Rafi Maulana',
       nim: '24060120140088',
       kelas: 'IF-1A',
+      prodi: 'Teknik Informatika',
+      institusi: 'Universitas Teknologi Nusantara',
+      semester: 'Semester 1',
+      email: 'rafi.maulana@mahasiswa.ac.id',
+      bio: 'Fokus menguasai algoritma Python, struktur data, dan pemrograman berorientasi objek.',
       avatarId: 'student',
       xp: 320,
       streakDays: 3,
@@ -168,7 +173,15 @@ export function loadProgressState(): AppProgressState {
     if (!raw) return createInitialProgressState();
     const parsed = JSON.parse(raw) as AppProgressState;
     if (!parsed || !parsed.profile || !parsed.modules) return createInitialProgressState();
-    return parsed;
+    const defaults = createInitialProgressState();
+    return {
+      ...defaults,
+      ...parsed,
+      profile: {
+        ...defaults.profile,
+        ...parsed.profile,
+      },
+    };
   } catch {
     return createInitialProgressState();
   }

@@ -1,5 +1,20 @@
-import { useMemo, useState } from 'react';
-import { Award, CheckCircle2, Lock, RotateCcw, Star, Trophy } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Award,
+  Camera,
+  Check,
+  CheckCircle2,
+  Copy,
+  Download,
+  Link2,
+  Lock,
+  RotateCcw,
+  Share2,
+  Star,
+  Trash2,
+  Trophy,
+  X,
+} from 'lucide-react';
 import {
   BADGE_DEFINITIONS,
   BADGE_EMBLEM_IMAGE,
@@ -12,7 +27,16 @@ import {
   countCompletedModules,
   countTotalMiniGameStars,
 } from '../engine/gamification';
-import type { AppProgressState, UserProfile } from '../types';
+import {
+  buildProfileShareText,
+  buildProfileShareUrl,
+  buildSharedProfilePayload,
+  MAX_BIO_LENGTH,
+  processProfilePhotoFile,
+  renderProfileCardPng,
+  validateProfileInput,
+} from '../engine/profileShare';
+import type { AppProgressState, EditableUserProfile, UserProfile } from '../types';
 
 /* ==================== LEADERBOARD VIEW ==================== */
 
@@ -201,71 +225,245 @@ export function LeaderboardView({ state }: LeaderboardViewProps) {
 
 interface ProfileViewProps {
   state: AppProgressState;
-  onUpdateProfile: (updates: Pick<UserProfile, 'name' | 'nim' | 'kelas' | 'avatarId'>) => void;
+  onUpdateProfile: (updates: EditableUserProfile) => void;
   onResetProgress: () => void;
+}
+
+const SEMESTER_OPTIONS = [
+  'Semester 1',
+  'Semester 2',
+  'Semester 3',
+  'Semester 4',
+  'Semester 5',
+  'Semester 6',
+  'Semester 7',
+  'Semester 8',
+  'Umum / Mandiri',
+];
+
+async function copyTextReliable(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fallback below when Clipboard API is blocked inside iframe
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', 'true');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 export function ProfileView({ state, onUpdateProfile, onResetProgress }: ProfileViewProps) {
   const [name, setName] = useState(state.profile.name);
   const [nim, setNim] = useState(state.profile.nim);
   const [kelas, setKelas] = useState(state.profile.kelas);
+  const [prodi, setProdi] = useState(state.profile.prodi);
+  const [institusi, setInstitusi] = useState(state.profile.institusi);
+  const [semester, setSemester] = useState(state.profile.semester);
+  const [email, setEmail] = useState(state.profile.email);
+  const [bio, setBio] = useState(state.profile.bio);
   const [avatarId, setAvatarId] = useState<UserProfile['avatarId']>(state.profile.avatarId);
+  const [photoDataUrl, setPhotoDataUrl] = useState<string | undefined>(state.profile.photoDataUrl);
+
   const [formError, setFormError] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [avatarImgFailed, setAvatarImgFailed] = useState(false);
   const [emblemImgFailed, setEmblemImgFailed] = useState(false);
 
+  // Share Modal State
+  const [shareOpen, setShareOpen] = useState(false);
+  const [copiedMode, setCopiedMode] = useState<'link' | 'text' | 'native' | null>(null);
+  const [downloadingCard, setDownloadingCard] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Sync form fields if user resets progress
+  useEffect(() => {
+    setName(state.profile.name);
+    setNim(state.profile.nim);
+    setKelas(state.profile.kelas);
+    setProdi(state.profile.prodi);
+    setInstitusi(state.profile.institusi);
+    setSemester(state.profile.semester);
+    setEmail(state.profile.email);
+    setBio(state.profile.bio);
+    setAvatarId(state.profile.avatarId);
+    setPhotoDataUrl(state.profile.photoDataUrl);
+  }, [
+    state.profile.name,
+    state.profile.nim,
+    state.profile.kelas,
+    state.profile.prodi,
+    state.profile.institusi,
+    state.profile.semester,
+    state.profile.email,
+    state.profile.bio,
+    state.profile.avatarId,
+    state.profile.photoDataUrl,
+  ]);
+
   const levelInfo = calculateLevelInfo(state.profile.xp);
   const completedMods = countCompletedModules(state);
   const totalStars = countTotalMiniGameStars(state);
 
+  const leaderboardRows = useMemo(
+    () => buildLeaderboard(state, PEER_STUDENTS, 'total'),
+    [state]
+  );
+  const currentRank = leaderboardRows.find((r) => r.isCurrentUser)?.rank ?? 1;
+
+  const sharePayload = useMemo(
+    () => buildSharedProfilePayload(state, currentRank),
+    [state, currentRank]
+  );
+
+  const shareUrl = useMemo(() => {
+    const baseHref = typeof window !== 'undefined' ? window.location.href : 'https://pydasar.app/';
+    return buildProfileShareUrl(baseHref, sharePayload);
+  }, [sharePayload]);
+
+  const shareSummaryText = useMemo(
+    () => buildProfileShareText(sharePayload, leaderboardRows.length, shareUrl),
+    [sharePayload, leaderboardRows.length, shareUrl]
+  );
+
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoError(null);
+    setPhotoLoading(true);
+    try {
+      const resized = await processProfilePhotoFile(file);
+      setPhotoDataUrl(resized);
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Gagal memproses foto.');
+    } finally {
+      setPhotoLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanName = name.trim();
-    const cleanNim = nim.trim();
-    const cleanKelas = kelas.trim();
+    const candidate: EditableUserProfile = {
+      name: name.trim(),
+      nim: nim.trim(),
+      kelas: kelas.trim(),
+      prodi: prodi.trim(),
+      institusi: institusi.trim(),
+      semester: semester.trim() || 'Semester 1',
+      email: email.trim(),
+      bio: bio.trim(),
+      avatarId,
+      photoDataUrl,
+    };
 
-    if (cleanName.length < 2) {
-      setFormError('Nama lengkap minimal terdiri dari 2 karakter.');
-      return;
-    }
-    if (cleanNim.length < 4) {
-      setFormError('NIM minimal terdiri dari 4 karakter.');
-      return;
-    }
-    if (cleanKelas.length < 2) {
-      setFormError('Nama kelas wajib diisi (contoh: IF-1A).');
+    const validationError = validateProfileInput(candidate);
+    if (validationError) {
+      setFormError(validationError);
       return;
     }
 
     setFormError(null);
-    onUpdateProfile({
-      name: cleanName,
-      nim: cleanNim,
-      kelas: cleanKelas,
-      avatarId,
-    });
+    onUpdateProfile(candidate);
     setSavedNotice(true);
-    window.setTimeout(() => setSavedNotice(false), 3000);
+    window.setTimeout(() => setSavedNotice(false), 3500);
   };
 
-  const initials = state.profile.name
+  const handleCopyShareLink = async () => {
+    await copyTextReliable(shareUrl);
+    setCopiedMode('link');
+    window.setTimeout(() => setCopiedMode(null), 2500);
+  };
+
+  const handleCopyShareText = async () => {
+    await copyTextReliable(shareSummaryText);
+    setCopiedMode('text');
+    window.setTimeout(() => setCopiedMode(null), 2500);
+  };
+
+  const handleNativeShare = async () => {
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: `Profil PyDasar Studio — ${state.profile.name}`,
+          text: shareSummaryText,
+          url: shareUrl,
+        });
+        setCopiedMode('native');
+        window.setTimeout(() => setCopiedMode(null), 2500);
+        return;
+      } catch {
+        // User cancelled or blocked in iframe; fallback to clipboard copy
+      }
+    }
+    await handleCopyShareText();
+  };
+
+  const handleDownloadCard = async () => {
+    setDownloadingCard(true);
+    try {
+      const cardPhoto =
+        state.profile.photoDataUrl ||
+        (state.profile.avatarId === 'student' && !avatarImgFailed ? STUDENT_AVATAR_IMAGE : undefined);
+      const pngUrl = await renderProfileCardPng(sharePayload, cardPhoto);
+      const a = document.createElement('a');
+      a.href = pngUrl;
+      a.download = `kartu-profil-${state.profile.nim || 'pydasar'}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } finally {
+      setDownloadingCard(false);
+    }
+  };
+
+  const initials = (name || state.profile.name)
     .split(' ')
     .map((part) => part[0])
     .join('')
     .slice(0, 2)
     .toUpperCase();
 
-  const renderAvatar = (selected: UserProfile['avatarId'], size = 'w-20 h-20') => {
+  const renderAvatar = (
+    selected: UserProfile['avatarId'],
+    customPhoto?: string,
+    size = 'w-20 h-20',
+    altName = state.profile.name
+  ) => {
+    if (customPhoto) {
+      return (
+        <img
+          src={customPhoto}
+          alt={`Foto profil ${altName}`}
+          className={`${size} rounded-2xl object-cover border border-slate-200 shrink-0`}
+        />
+      );
+    }
     if (selected === 'student' && !avatarImgFailed) {
       return (
         <img
           src={STUDENT_AVATAR_IMAGE}
-          alt={`Avatar mahasiswa ${state.profile.name}`}
+          alt={`Avatar mahasiswa ${altName}`}
           referrerPolicy="no-referrer"
           onError={() => setAvatarImgFailed(true)}
-          className={`${size} rounded-2xl object-cover border border-slate-200`}
+          className={`${size} rounded-2xl object-cover border border-slate-200 shrink-0`}
         />
       );
     }
@@ -277,7 +475,7 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
     };
     return (
       <div
-        className={`${size} rounded-2xl flex items-center justify-center font-bold text-xl ${bgMap[selected]}`}
+        className={`${size} rounded-2xl flex items-center justify-center font-bold text-xl shrink-0 ${bgMap[selected]}`}
       >
         {initials || 'PY'}
       </div>
@@ -288,13 +486,13 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
     <section className="space-y-10">
       {/* Top Profile & Identity Section */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left: Student Identity Summary & Level Bar */}
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 space-y-6">
-          <div className="flex items-center gap-4">
-            {renderAvatar(state.profile.avatarId)}
-            <div className="min-w-0">
+        {/* Left: Student Identity Summary & Share Trigger */}
+        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
+          <div className="flex items-start gap-4">
+            {renderAvatar(state.profile.avatarId, state.profile.photoDataUrl)}
+            <div className="min-w-0 flex-1">
               <p className="text-xs font-medium text-blue-700">
-                Level {levelInfo.level} · {levelInfo.title}
+                Level {levelInfo.level} · {levelInfo.title} · Peringkat #{currentRank}
               </p>
               <h1 className="text-xl font-bold text-slate-900 truncate mt-0.5">
                 {state.profile.name}
@@ -302,8 +500,26 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
               <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
                 NIM {state.profile.nim} · Kelas {state.profile.kelas}
               </p>
+              <p className="text-xs text-slate-600 mt-1">
+                {state.profile.prodi}
+                {state.profile.semester ? ` · ${state.profile.semester}` : ''}
+              </p>
+              {state.profile.institusi && (
+                <p className="text-xs text-slate-500 mt-0.5 truncate">{state.profile.institusi}</p>
+              )}
+              {state.profile.email && (
+                <p className="text-xs text-slate-400 font-mono mt-0.5 truncate">
+                  {state.profile.email}
+                </p>
+              )}
             </div>
           </div>
+
+          {state.profile.bio && (
+            <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-2.5">
+              “{state.profile.bio}”
+            </p>
+          )}
 
           <div className="space-y-2 tabular-nums">
             <div className="flex items-center justify-between text-xs">
@@ -334,6 +550,26 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
               <p className="text-xs text-slate-500">Streak</p>
             </div>
           </div>
+
+          <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <Share2 className="w-4 h-4" />
+              Bagikan Profil
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadCard}
+              disabled={downloadingCard}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap disabled:opacity-60"
+            >
+              <Download className="w-4 h-4" />
+              {downloadingCard ? 'Membuat...' : 'Kartu PNG'}
+            </button>
+          </div>
         </div>
 
         {/* Right: Edit Profile Form */}
@@ -341,11 +577,60 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
           onSubmit={handleSave}
           className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 space-y-5"
         >
-          <div>
-            <h2 className="text-base font-bold text-slate-900">Pengaturan Profil Mahasiswa</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Identitas ini ditampilkan pada Papan Peringkat dan Transkrip Rekap Pembelajaran.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Pengaturan Profil Mahasiswa</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Lengkapi data diri dan foto profil untuk disimpan, ditampilkan di Papan Peringkat, serta dibagikan.
+              </p>
+            </div>
+          </div>
+
+          {/* Photo Upload & Preview Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
+            {renderAvatar(avatarId, photoDataUrl, 'w-16 h-16', name || state.profile.name)}
+            <div className="flex-1 min-w-0 space-y-2">
+              <div>
+                <p className="text-xs font-semibold text-slate-800">Foto Profil</p>
+                <p className="text-[11px] text-slate-500">
+                  Unggah foto JPG, PNG, atau WebP (maks. 5 MB). Foto otomatis disesuaikan agar tersimpan cepat.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  id="profile-photo-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  className="sr-only"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={photoLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  {photoLoading ? 'Memproses...' : photoDataUrl ? 'Ganti Foto' : 'Unggah Foto'}
+                </button>
+                {photoDataUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setPhotoDataUrl(undefined)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:text-red-700 hover:border-red-200 rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Hapus Foto
+                  </button>
+                )}
+              </div>
+              {photoError && (
+                <p role="alert" className="text-xs font-medium text-red-700">
+                  {photoError}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -358,6 +643,7 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="Contoh: Rafi Maulana"
                 className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
@@ -371,6 +657,7 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
                 type="text"
                 value={nim}
                 onChange={(e) => setNim(e.target.value)}
+                placeholder="24060120140088"
                 className="w-full px-3.5 py-2.5 text-sm font-mono bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
@@ -384,13 +671,96 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
                 type="text"
                 value={kelas}
                 onChange={(e) => setKelas(e.target.value)}
+                placeholder="Contoh: IF-1A"
                 className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="profile-prodi" className="block text-xs font-semibold text-slate-700">
+                Program Studi
+              </label>
+              <input
+                id="profile-prodi"
+                type="text"
+                value={prodi}
+                onChange={(e) => setProdi(e.target.value)}
+                placeholder="Contoh: Teknik Informatika"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="profile-semester" className="block text-xs font-semibold text-slate-700">
+                Semester
+              </label>
+              <select
+                id="profile-semester"
+                value={semester}
+                onChange={(e) => setSemester(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                {SEMESTER_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="profile-institusi" className="block text-xs font-semibold text-slate-700">
+                Kampus / Institusi
+              </label>
+              <input
+                id="profile-institusi"
+                type="text"
+                value={institusi}
+                onChange={(e) => setInstitusi(e.target.value)}
+                placeholder="Contoh: Universitas Teknologi Nusantara"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="profile-email" className="block text-xs font-semibold text-slate-700">
+                Email Akademik (Opsional)
+              </label>
+              <input
+                id="profile-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nama@mahasiswa.ac.id"
+                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            <div className="sm:col-span-2 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label htmlFor="profile-bio" className="block text-xs font-semibold text-slate-700">
+                  Bio Singkat / Target Belajar
+                </label>
+                <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                  {bio.length}/{MAX_BIO_LENGTH}
+                </span>
+              </div>
+              <textarea
+                id="profile-bio"
+                rows={2}
+                maxLength={MAX_BIO_LENGTH}
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Tuliskan fokus belajarmu di mata kuliah Dasar Pemrograman..."
+                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-slate-700">Gaya Avatar</p>
+            <p className="text-xs font-semibold text-slate-700">
+              Gaya Avatar Cadangan {photoDataUrl ? '(aktif jika foto dihapus)' : ''}
+            </p>
             <div className="flex flex-wrap gap-2">
               {(
                 [
@@ -423,12 +793,20 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
           )}
 
           <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="submit"
                 className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors whitespace-nowrap"
               >
                 Simpan Profil
+              </button>
+              <button
+                type="button"
+                onClick={() => setShareOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+              >
+                <Share2 className="w-4 h-4" />
+                Share Profil
               </button>
               {savedNotice && (
                 <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
@@ -472,6 +850,169 @@ export function ProfileView({ state, onUpdateProfile, onResetProgress }: Profile
           </div>
         </form>
       </div>
+
+      {/* Share Profile Dialog */}
+      {shareOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-profile-title"
+          className="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4"
+        >
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
+              <div>
+                <h2 id="share-profile-title" className="text-base font-bold text-slate-900">
+                  Bagikan Profil Belajar
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Bagikan tautan profil, salin ringkasan teks, atau unduh kartu profil PNG beserta fotomu.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShareOpen(false)}
+                aria-label="Tutup jendela bagikan profil"
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Visual Profile Card Preview */}
+              <div className="rounded-xl border border-slate-200 overflow-hidden bg-slate-50">
+                <div className="bg-slate-900 px-5 py-3 flex items-center justify-between text-xs">
+                  <span className="font-semibold text-blue-300">PyDasar Studio · Kartu Profil</span>
+                  <span className="font-mono text-slate-300 tabular-nums">
+                    Peringkat #{sharePayload.rank} · Lv. {sharePayload.level}
+                  </span>
+                </div>
+                <div className="p-5 bg-white space-y-4">
+                  <div className="flex items-center gap-4">
+                    {renderAvatar(
+                      state.profile.avatarId,
+                      state.profile.photoDataUrl,
+                      'w-16 h-16',
+                      state.profile.name
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-lg font-bold text-slate-900 truncate">{sharePayload.name}</p>
+                      <p className="text-xs font-mono text-slate-500 tabular-nums">
+                        NIM {sharePayload.nim} · Kelas {sharePayload.kelas}
+                      </p>
+                      <p className="text-xs text-slate-600 mt-0.5 truncate">
+                        {[sharePayload.prodi, sharePayload.institusi, sharePayload.semester]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    </div>
+                  </div>
+                  {sharePayload.bio && (
+                    <p className="text-xs text-slate-600 italic">“{sharePayload.bio}”</p>
+                  )}
+                  <div className="grid grid-cols-4 gap-2 pt-3 border-t border-slate-100 text-center tabular-nums">
+                    <div>
+                      <p className="text-sm font-bold font-mono text-slate-900">{sharePayload.xp}</p>
+                      <p className="text-[11px] text-slate-500">XP</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold font-mono text-slate-900">
+                        {sharePayload.completedModules}/13
+                      </p>
+                      <p className="text-[11px] text-slate-500">Modul</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold font-mono text-slate-900">
+                        {sharePayload.totalStars}
+                      </p>
+                      <p className="text-[11px] text-slate-500">Bintang</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold font-mono text-slate-900">
+                        {sharePayload.badgesCount}
+                      </p>
+                      <p className="text-[11px] text-slate-500">Lencana</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Shareable URL Field */}
+              <div className="space-y-1.5">
+                <label htmlFor="share-profile-url" className="block text-xs font-semibold text-slate-700">
+                  Tautan Profil
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="share-profile-url"
+                    type="text"
+                    readOnly
+                    value={shareUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 min-w-0 px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg text-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyShareLink}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded-lg whitespace-nowrap"
+                  >
+                    {copiedMode === 'link' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        Tersalin
+                      </>
+                    ) : (
+                      <>
+                        <Link2 className="w-3.5 h-3.5" />
+                        Salin Tautan
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleCopyShareText}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap"
+                >
+                  {copiedMode === 'text' ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-700" />
+                      Teks Tersalin
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Salin Ringkasan
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadCard}
+                  disabled={downloadingCard}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap disabled:opacity-60"
+                >
+                  <Download className="w-4 h-4" />
+                  {downloadingCard ? 'Menyiapkan...' : 'Unduh Kartu PNG'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNativeShare}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg whitespace-nowrap"
+                >
+                  <Share2 className="w-4 h-4" />
+                  {copiedMode === 'native' ? 'Dibagikan' : 'Bagikan Langsung'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Achievement Badges Gallery */}
       <div className="space-y-5">

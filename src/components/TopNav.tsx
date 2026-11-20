@@ -6,6 +6,7 @@ interface TopNavProps {
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
   userName: string;
+  userPhotoUrl?: string;
 }
 
 const NAV_ITEMS: { id: AppTab; label: string }[] = [
@@ -16,7 +17,7 @@ const NAV_ITEMS: { id: AppTab; label: string }[] = [
   { id: 'peringkat', label: 'Peringkat' },
 ];
 
-export function TopNav({ activeTab, onSelectTab, userName }: TopNavProps) {
+export function TopNav({ activeTab, onSelectTab, userName, userPhotoUrl }: TopNavProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleNav = (tab: AppTab) => {
@@ -73,12 +74,20 @@ export function TopNav({ activeTab, onSelectTab, userName }: TopNavProps) {
             type="button"
             onClick={() => handleNav('profil')}
             aria-label={`Buka profil ${userName}`}
-            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+            className={`inline-flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
               activeTab === 'profil'
                 ? 'bg-blue-700 text-white'
                 : 'bg-slate-900 text-white hover:bg-slate-800'
             }`}
           >
+            {userPhotoUrl && (
+              <img
+                src={userPhotoUrl}
+                alt=""
+                aria-hidden="true"
+                className="w-5 h-5 rounded-full object-cover border border-white/30"
+              />
+            )}
             Profil
           </button>
 

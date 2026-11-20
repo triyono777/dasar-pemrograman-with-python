@@ -10,6 +10,14 @@ import {
   stepPlatformerBody,
   type BugEnemy,
 } from './arcadePhysics';
+import {
+  canCollectWaypoint,
+  CHARACTER_ARCADE_CONFIGS,
+  evaluateBinarySearchStep,
+  isArraySorted,
+  swapAdjacentIfNeeded,
+} from '../data/characterArcadeConfigs';
+import { MINI_GAMES } from '../data/minigames';
 
 test('clampDt caps large frame deltas safely', () => {
   assert.equal(clampDt(0.016), 0.016);
@@ -134,3 +142,50 @@ test('pooled particle ring buffer emits and decays without allocating new array 
   assert.equal(pool.filter((p) => p.active).length, 0);
   assert.equal(pool.length, 12);
 });
+test('all 14 character mini-games (4 original + 10 new) are registered with valid configs', () => {
+  const charGames = MINI_GAMES.filter((g) => g.engine === 'char_move' || g.engine === 'char_action');
+  assert.equal(charGames.length, 14);
+  assert.equal(MINI_GAMES.length, 27);
+
+  for (const game of charGames) {
+    assert.ok(game.arcadeVariant, `Game ${game.id} must define arcadeVariant`);
+    const cfg = CHARACTER_ARCADE_CONFIGS[game.arcadeVariant!];
+    assert.ok(cfg, `Missing config for ${game.arcadeVariant}`);
+    assert.equal(cfg.isActionVariant, game.engine === 'char_action');
+  }
+});
+
+test('canCollectWaypoint enforces strict sequential flowchart order', () => {
+  assert.equal(canCollectWaypoint(1, 1), true);
+  assert.equal(canCollectWaypoint(2, 1), false);
+  assert.equal(canCollectWaypoint(3, 3), true);
+});
+
+test('evaluateBinarySearchStep narrows search space and finds targets accurately', () => {
+  const arr = [4, 9, 15, 22, 31, 40, 55, 68];
+  const wrong = evaluateBinarySearchStep(arr, 0, 7, 40, 5);
+  assert.equal(wrong.outcome, 'wrong_index');
+  assert.equal(wrong.expectedMid, 3);
+
+  const step1 = evaluateBinarySearchStep(arr, 0, 7, 40, 3);
+  assert.equal(step1.outcome, 'narrow_right');
+  assert.equal(step1.nextLow, 4);
+  assert.equal(step1.nextHigh, 7);
+
+  const step2 = evaluateBinarySearchStep(arr, 4, 7, 40, 5);
+  assert.equal(step2.outcome, 'found');
+});
+
+test('swapAdjacentIfNeeded and isArraySorted handle ascending and descending bubble sort', () => {
+  const res1 = swapAdjacentIfNeeded([34, 12, 28], 0, 'asc');
+  assert.equal(res1.swapped, true);
+  assert.deepEqual(res1.nextArray, [12, 34, 28]);
+
+  const res2 = swapAdjacentIfNeeded([12, 34, 28], 0, 'asc');
+  assert.equal(res2.swapped, false);
+
+  assert.equal(isArraySorted([12, 28, 34], 'asc'), true);
+  assert.equal(isArraySorted([34, 28, 12], 'desc'), true);
+  assert.equal(isArraySorted([12, 34, 28], 'desc'), false);
+});
+

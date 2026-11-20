@@ -458,7 +458,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white mt-12 no-print">
         <div className="max-w-[1360px] mx-auto px-4 sm:px-6 py-5 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
           <span>PyDasar Studio · Mata Kuliah Dasar Pemrograman (Python)</span>
-          <span>13 Modul · Lab Interaktif · 17 Mini-Game · Asesmen &amp; Rekap</span>
+          <span>13 Modul · Lab Interaktif · 27 Mini-Game · Asesmen &amp; Rekap</span>
         </div>
       </footer>
     </div>

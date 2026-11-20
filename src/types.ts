@@ -15,7 +15,17 @@ export type CharacterArcadeVariant =
   | 'maze_types'
   | 'branch_runner'
   | 'loop_platformer'
-  | 'bug_defender';
+  | 'bug_defender'
+  | 'algo_waypoint'
+  | 'operator_gates'
+  | 'list_index_maze'
+  | 'dict_key_courier'
+  | 'binary_search_dash'
+  | 'func_factory_jump'
+  | 'recursion_tower'
+  | 'oop_blueprint_shooter'
+  | 'poly_morph_arena'
+  | 'sort_swamp_action';
 
 export interface ConceptBlock {
   title: string;

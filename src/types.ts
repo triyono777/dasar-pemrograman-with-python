@@ -1,4 +1,52 @@
-export type AppTab = 'kurikulum' | 'minigame' | 'asesmen' | 'rekap' | 'peringkat' | 'profil';
+export type AppTab = 'kurikulum' | 'awam' | 'minigame' | 'asesmen' | 'rekap' | 'peringkat' | 'profil';
+
+export type LaymanTone = 'bayi' | 'awam';
+
+export interface LaymanCodeLine {
+  code: string;
+  humanMeaning: string;
+}
+
+export interface LaymanGlossaryTerm {
+  term: string;
+  plainMeaning: string;
+}
+
+export interface LaymanQuickCheck {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  feedback: string;
+}
+
+export interface LaymanModuleGuide {
+  moduleId: number;
+  category: CurriculumModule['category'];
+  moduleShortTitle: string;
+  analogyTitle: string;
+  analogyEmojiLabel: string;
+  oneLineHook: string;
+  babyStory: {
+    headline: string;
+    paragraphs: string[];
+    rememberRule: string;
+  };
+  laymanStory: {
+    headline: string;
+    paragraphs: string[];
+    rememberRule: string;
+  };
+  visualSteps: {
+    stepLabel: string;
+    realLife: string;
+    inPython: string;
+  }[];
+  sampleCode: string;
+  sampleInputs?: string[];
+  codeTranslations: LaymanCodeLine[];
+  glossary: LaymanGlossaryTerm[];
+  quickCheck: LaymanQuickCheck;
+}
 
 export type MiniGameEngineType =
   | 'sequencer'
@@ -307,4 +355,5 @@ export interface AppProgressState {
   assessments: AssessmentAttempt[];
   unlockedBadgeIds: string[];
   weeklyXpEarned: number;
+  understoodLaymanModuleIds?: number[];
 }

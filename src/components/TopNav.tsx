@@ -11,6 +11,7 @@ interface TopNavProps {
 
 const NAV_ITEMS: { id: AppTab; label: string }[] = [
   { id: 'kurikulum', label: 'Kurikulum' },
+  { id: 'awam', label: 'Bahasa Awam' },
   { id: 'minigame', label: 'Mini-Game' },
   { id: 'asesmen', label: 'Asesmen' },
   { id: 'rekap', label: 'Rekap & Hasil' },

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Award, X } from 'lucide-react';
 import { AssessmentView } from './components/AssessmentView';
 import { CurriculumView } from './components/CurriculumView';
+import { LaymanExplainerView } from './components/LaymanExplainerView';
 import { LeaderboardView, ProfileView } from './components/LeaderboardAndProfileView';
 import { MiniGameHub } from './components/MiniGameHub';
 import { ResultsAndRecapView } from './components/ResultsAndRecapView';
@@ -146,6 +147,21 @@ export default function App() {
         },
         xpGained: 40,
         reason: `Konsep Modul ${String(moduleId).padStart(2, '0')} selesai dipelajari.`,
+      };
+    });
+  };
+
+  const handleMarkLaymanUnderstood = (moduleId: number) => {
+    applyProgressUpdate((prev) => {
+      const existingIds = prev.understoodLaymanModuleIds ?? [];
+      if (existingIds.includes(moduleId)) return { next: prev, xpGained: 0 };
+      return {
+        next: {
+          ...prev,
+          understoodLaymanModuleIds: [...existingIds, moduleId],
+        },
+        xpGained: 15,
+        reason: `Topik ${String(moduleId).padStart(2, '0')} Bahasa Awam dipahami!`,
       };
     });
   };
@@ -416,6 +432,18 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'awam' && (
+          <LaymanExplainerView
+            understoodModuleIds={state.understoodLaymanModuleIds ?? []}
+            onMarkUnderstood={handleMarkLaymanUnderstood}
+            onGoToCurriculumModule={(modId) => {
+              setSelectedModuleId(modId);
+              setActiveTab('kurikulum');
+            }}
+            onGoToMiniGames={() => setActiveTab('minigame')}
+          />
+        )}
+
         {activeTab === 'minigame' && (
           <MiniGameHub
             records={state.miniGames}
@@ -458,7 +486,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white mt-12 no-print">
         <div className="max-w-[1360px] mx-auto px-4 sm:px-6 py-5 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-500">
           <span>PyDasar Studio · Mata Kuliah Dasar Pemrograman (Python)</span>
-          <span>13 Modul · Lab Interaktif · 27 Mini-Game · Asesmen &amp; Rekap</span>
+          <span>13 Modul · Bahasa Awam · Lab Interaktif · 27 Mini-Game · Asesmen &amp; Rekap</span>
         </div>
       </footer>
     </div>

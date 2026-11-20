@@ -1,0 +1,6 @@
+{
+  "name": "PyDasar Studio",
+  "description": "Pembelajaran interaktif mata kuliah Dasar Pemrograman menggunakan Python: 13 modul terstruktur, lab kode langsung, 13 mini-game edukatif, asesmen, hasil, rekap, papan peringkat, dan lencana pencapaian.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
